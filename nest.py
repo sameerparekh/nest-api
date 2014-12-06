@@ -5,6 +5,8 @@ from dateutil import parser
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.poolmanager import PoolManager
 import ssl
+from pprint import pprint
+import time
 
 class MyAdapter(HTTPAdapter):
     def init_poolmanager(self, connections, maxsize, block=False):
@@ -24,6 +26,7 @@ class Nest(object):
         self.password = password
         self.session = requests.Session()
         self.session.mount("https://", MyAdapter())
+        self._status = None
 
     @property
     def headers(self):
@@ -69,9 +72,37 @@ class Nest(object):
         r = self.request("https://home.nest.com/api/0.1/weather/forecast/%s" % postal_code)
         return r.json()
 
+    def update_status(self):
+        self._status = self.get_status()
+        self._status_time = time.time()
+
+    @property
+    def status(self):
+        if self._status is None or time.time() - self._status_time > 300:
+            self.update_status()
+        return self._status
+
+    def get_device_weather(self, device_id=None):
+        if device_id is None:
+            device_id = self.status['device'].keys()[0]
+        postal_code = self.status['device'][device_id]['postal_code']
+        weather = self.get_weather(postal_code)
+        return weather
+
+    def get_device_summary(self, device_id=None):
+        if device_id is None:
+            device_id = self.status['device'].keys()[0]
+        weather = self.get_device_weather(device_id)
+        return {
+        'temperature': {'target': self.status['shared'][device_id]['target_temperature'],
+                       'current': self.status['shared'][device_id]['current_temperature'],
+                       'outside': weather['now']['current_temperature'] }
+        }
+
+
 if __name__ == "__main__":
     nest = Nest('nest.com@spam.creativedestruction.com', 'phom5vysh9phop')
     nest.login()
-    print nest.get_status()
+    pprint(nest.get_device_summary())
 
 
